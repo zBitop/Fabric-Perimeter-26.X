@@ -6,6 +6,9 @@ import net.minecraft.resources.Identifier;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import zbitop.perimeter.block.ModBlocks;
+import zbitop.perimeter.creativemodetab.ModCreativeModeTabs;
+import zbitop.perimeter.item.ModItems;
 
 public class Perimeter implements ModInitializer {
 	public static final String MOD_ID = "perimeter";
@@ -13,7 +16,10 @@ public class Perimeter implements ModInitializer {
 
 	@Override
 	public void onInitialize() {
+		ModCreativeModeTabs.registerModCretiveModeTabs();
 
+		ModItems.registerModItems();
+		ModBlocks.registerModBlock();
 	}
 
 	public static Identifier id(String path) {

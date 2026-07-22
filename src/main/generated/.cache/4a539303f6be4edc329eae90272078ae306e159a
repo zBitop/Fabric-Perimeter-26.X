@@ -1,0 +1,6 @@
+// 26.2	-999999999-01-01T00:00:00	Perimeter/Model Definitions
+d49e7022dd6a39ea0bbb41d29f06875bebeed80b assets/perimeter/blockstates/perimeter_block.json
+1cf25a55b760075fefdd5e0a24cc7c17f333933b assets/perimeter/items/perimeter_block.json
+8bcd38f63d7520ee6380920d7b6a97e996f47529 assets/perimeter/items/perimeter_wand.json
+d0dd0277cb71ee5c6a3f1713c65e03e0753e9fa9 assets/perimeter/models/block/perimeter_block.json
+260fea298ec75be5ec4adb68398c914ff0441ede assets/perimeter/models/item/perimeter_wand.json
