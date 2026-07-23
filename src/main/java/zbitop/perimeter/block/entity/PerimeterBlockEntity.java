@@ -3,8 +3,10 @@ package zbitop.perimeter.block.entity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Holder;
+import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
@@ -161,6 +163,33 @@ public class PerimeterBlockEntity extends BlockEntity implements ExtendedMenuPro
     }
 
     /**
+     * Mientras el bloque está "en espera" (sin minar), muestra dos líneas de partículas
+     * saliendo del bloque: llamas naranjas hacia +X y llamas azules (soul fire) hacia +Z.
+     * Esas son exactamente las direcciones en las que va a crecer el perímetro al confirmar,
+     * así se puede ver hacia dónde va a excavar sin necesidad de F3.
+     */
+    private static final int INDICATOR_LENGTH = 6;
+
+    private void showDirectionIndicator(Level level, BlockPos originPos) {
+        if (!(level instanceof ServerLevel serverLevel)) return;
+        if (level.getGameTime() % 10 != 0) return; // cada medio segundo, no hace falta todos los ticks
+
+        for (int i = 1; i <= INDICATOR_LENGTH; i++) {
+            serverLevel.sendParticles(
+                    ParticleTypes.FLAME,
+                    originPos.getX() + i + 0.5, originPos.getY() + 0.3, originPos.getZ() + 0.5,
+                    1, 0, 0, 0, 0
+            );
+            serverLevel.sendParticles(
+                    ParticleTypes.SOUL_FIRE_FLAME,
+                    originPos.getX() + 0.5, originPos.getY() + 0.3, originPos.getZ() + i + 0.5,
+                    1, 0, 0, 0, 0
+            );
+        }
+    }
+
+
+    /**
      * Progreso del minado actual, de 0 a 100. Se usa para sincronizar la barra
      * de progreso al cliente a través de un DataSlot en PerimeterMenu.
      */
@@ -176,7 +205,10 @@ public class PerimeterBlockEntity extends BlockEntity implements ExtendedMenuPro
     }
 
     public void tick(Level level, BlockPos originPos) {
-        if (!mining) return;
+        if (!mining) {
+            showDirectionIndicator(level, originPos);
+            return;
+        }
 
         int height = originPos.getY() - level.getMinY();
         long totalBlocks = (long) size * size * height;

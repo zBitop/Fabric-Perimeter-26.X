@@ -16,6 +16,7 @@ public class PerimeterMenu extends AbstractContainerMenu {
     // Espejo del progreso sincronizado por el DataSlot. En el servidor no se usa
     // (ahí se lee directo de blockEntity), en el cliente es lo único confiable.
     private int syncedProgressPercent = 0;
+    private int syncedMining = 0;
 
     // Constructor del lado del CLIENTE: se llama cuando llega el paquete de "abrir menú" con el BlockPos
     public PerimeterMenu(int syncId, Inventory playerInventory, BlockPos pos) {
@@ -40,6 +41,19 @@ public class PerimeterMenu extends AbstractContainerMenu {
                 // Se llama en el cliente cuando llega el paquete de sincronización.
                 syncedProgressPercent = value;
             }
+
+        });
+
+        this.addDataSlot(new DataSlot() {
+            @Override
+            public int get() {
+                return blockEntity.isMining() ? 1 : 0; // DataSlot solo maneja int, no boolean
+            }
+
+            @Override
+            public void set(int value) {
+                syncedMining = value;
+            }
         });
     }
 
@@ -57,6 +71,10 @@ public class PerimeterMenu extends AbstractContainerMenu {
 
     public int getProgressPercent() {
         return syncedProgressPercent;
+    }
+
+    public boolean isMining() {
+        return syncedMining != 0;
     }
 
     @Override

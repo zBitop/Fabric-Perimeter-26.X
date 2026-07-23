@@ -17,19 +17,24 @@ public class PerimeterScreen extends AbstractContainerScreen<PerimeterMenu> {
     private String lastValidValue;
 
     public PerimeterScreen(PerimeterMenu menu, Inventory playerInventory, Component title) {
-        super(menu, playerInventory, title);
+        // Pasamos Component.empty() en vez del 'title' recibido (que sería el nombre
+        // traducido del bloque, ej. "block.perimeter.perimeter") para que no se dibuje
+        // ningún título por defecto encima de nuestro panel.
+        super(menu, playerInventory, Component.empty());
+        // Este campo sí es mutable: así tampoco se dibuja el "Inventario" por defecto.
+        this.inventoryLabelX = Integer.MIN_VALUE / 2;
     }
 
     @Override
     protected void init() {
         super.init();
 
-        int fieldX = leftPos + 40;
-        int fieldY = topPos + 30;
+        int contentX = leftPos + 18;
+        int fieldY = topPos + 34;
 
         this.lastValidValue = String.valueOf(menu.getBlockEntityRef().getSize());
 
-        this.sizeField = new EditBox(this.font, fieldX, fieldY, 80, 20, Component.literal("Tamaño"));
+        this.sizeField = new EditBox(this.font, contentX, fieldY, imageWidth - 36, 20, Component.literal("Tamaño"));
         this.sizeField.setValue(this.lastValidValue);
 
         this.sizeField.setResponder(text -> {
@@ -44,13 +49,13 @@ public class PerimeterScreen extends AbstractContainerScreen<PerimeterMenu> {
 
         this.addRenderableWidget(
                 Button.builder(Component.literal("Confirmar"), button -> this.onConfirm())
-                        .bounds(fieldX, fieldY + 30, 80, 20)
+                        .bounds(contentX, fieldY + 26, imageWidth - 36, 20)
                         .build()
         );
 
         this.addRenderableWidget(
                 Button.builder(Component.literal("Retirar objetos"), button -> this.onWithdraw())
-                        .bounds(fieldX, fieldY + 55, 100, 20)
+                        .bounds(contentX, fieldY + 50, imageWidth - 36, 20)
                         .build()
         );
     }
@@ -81,16 +86,28 @@ public class PerimeterScreen extends AbstractContainerScreen<PerimeterMenu> {
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
         super.extractRenderState(graphics, mouseX, mouseY, partialTick);
-        graphics.fill(leftPos, topPos, leftPos + imageWidth, topPos + imageHeight, 0xC0101010);
-        graphics.text(this.font, "Tamaño del perímetro:", leftPos + 10, topPos + 15, 0xFFFFFFFF, false);
 
-        int barX = leftPos + 40;
-        int barY = topPos + 90;
-        int barWidth = 100;
+        graphics.fill(leftPos, topPos, leftPos + imageWidth, topPos + imageHeight, 0xE0101010);
+        // borde del panel
+        graphics.fill(leftPos, topPos, leftPos + imageWidth, topPos + 1, 0xFF565656);
+        graphics.fill(leftPos, topPos + imageHeight - 1, leftPos + imageWidth, topPos + imageHeight, 0xFF565656);
+        graphics.fill(leftPos, topPos, leftPos + 1, topPos + imageHeight, 0xFF565656);
+        graphics.fill(leftPos + imageWidth - 1, topPos, leftPos + imageWidth, topPos + imageHeight, 0xFF565656);
+
+        // título propio, centrado (reemplaza al título default del bloque)
+        String header = "Perímetro";
+        int headerWidth = this.font.width(header);
+        graphics.text(this.font, header, leftPos + (imageWidth - headerWidth) / 2, topPos + 8, 0xFFFFFFFF, false);
+
+        graphics.text(this.font, "Tamaño:", leftPos + 18, topPos + 24, 0xFFAAAAAA, false);
+
+        int barX = leftPos + 18;
+        int barY = topPos + 110;
+        int barWidth = imageWidth - 36;
         int barHeight = 12;
 
         int percent = menu.getProgressPercent();
-        boolean mining = menu.getBlockEntityRef().isMining();
+        boolean mining = menu.isMining();
 
         // fondo de la barra
         graphics.fill(barX, barY, barX + barWidth, barY + barHeight, 0xFF303030);
@@ -101,7 +118,7 @@ public class PerimeterScreen extends AbstractContainerScreen<PerimeterMenu> {
             graphics.fill(barX, barY, barX + filledWidth, barY + barHeight, 0xFF3AA13A);
         }
 
-        // borde
+        // borde de la barra
         graphics.fill(barX, barY, barX + barWidth, barY + 1, 0xFFFFFFFF);
         graphics.fill(barX, barY + barHeight - 1, barX + barWidth, barY + barHeight, 0xFFFFFFFF);
         graphics.fill(barX, barY, barX + 1, barY + barHeight, 0xFFFFFFFF);
