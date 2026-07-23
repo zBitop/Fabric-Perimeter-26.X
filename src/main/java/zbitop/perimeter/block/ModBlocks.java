@@ -8,32 +8,33 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import zbitop.perimeter.Perimeter;
 
-import java.lang.reflect.Parameter;
-import java.util.function.Function;
-
-
 public class ModBlocks {
-    public static final Block PERIMETER = registerBlock("perimeter_block",
-            properties -> new Block(properties.strength(2f)
-                    .requiresCorrectToolForDrops().sound(SoundType.IRON)));
 
-    private static Block registerBlock(String name, Function<BlockBehaviour.Properties, Block> function) {
-        Block toRegister = function.apply(BlockBehaviour.Properties.of().setId(ResourceKey.create(Registries.BLOCK, Identifier.fromNamespaceAndPath(Perimeter.MOD_ID, name))));
-        registerModBlockItem(name, toRegister);
-        return Registry.register(BuiltInRegistries.BLOCK, Identifier.fromNamespaceAndPath(Perimeter.MOD_ID, name), toRegister);
+    public static final Block PERIMETER = registerBlockWithItem("perimeter",
+            settings -> new PerimeterBlock(settings.strength(3.5f)));
+
+    private static Block registerBlockWithItem(String name,
+                                               java.util.function.Function<BlockBehaviour.Properties, Block> factory) {
+
+        ResourceKey<Block> blockKey = keyOf(Registries.BLOCK, name);
+        Block block = factory.apply(BlockBehaviour.Properties.of().setId(blockKey));
+        Registry.register(BuiltInRegistries.BLOCK, blockKey, block);
+
+        ResourceKey<Item> itemKey = keyOf(Registries.ITEM, name);
+        Item.Properties itemSettings = new Item.Properties().setId(itemKey);
+        Registry.register(BuiltInRegistries.ITEM, itemKey, new BlockItem(block, itemSettings));
+
+        return block;
     }
 
-    private static void registerModBlockItem(String name, Block block) {
-        Registry.register(BuiltInRegistries.ITEM, Identifier.fromNamespaceAndPath(Perimeter.MOD_ID, name),
-                new BlockItem(block, new Item.Properties().useBlockDescriptionPrefix()
-                        .setId(ResourceKey.create(Registries.ITEM, Identifier.fromNamespaceAndPath(Perimeter.MOD_ID, name)))));
+    private static <T> ResourceKey<T> keyOf(net.minecraft.resources.ResourceKey<net.minecraft.core.Registry<T>> registry, String name) {
+        return ResourceKey.create(registry, Identifier.fromNamespaceAndPath(Perimeter.MOD_ID, name));
     }
 
-    public static void registerModBlock() {
-        Perimeter.LOGGER.info("Registering Mod Blocks for" + Perimeter.MOD_ID);
+    public static void register() {
+        // fuerza la carga de la clase para que los static final se registren
     }
 }

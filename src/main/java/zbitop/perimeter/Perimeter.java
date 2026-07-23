@@ -7,8 +7,15 @@ import net.minecraft.resources.Identifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import zbitop.perimeter.block.ModBlocks;
-import zbitop.perimeter.creativemodetab.ModCreativeModeTabs;
-import zbitop.perimeter.item.ModItems;
+import zbitop.perimeter.block.entity.ModBlockEntities;
+import zbitop.perimeter.screen.ModMenuTypes;
+
+import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import zbitop.perimeter.block.entity.PerimeterBlockEntity;
+import zbitop.perimeter.network.PerimeterSizePayload;
+
 
 public class Perimeter implements ModInitializer {
 	public static final String MOD_ID = "perimeter";
@@ -16,10 +23,23 @@ public class Perimeter implements ModInitializer {
 
 	@Override
 	public void onInitialize() {
-		ModCreativeModeTabs.registerModCretiveModeTabs();
+		ModMenuTypes.register();
 
-		ModItems.registerModItems();
-		ModBlocks.registerModBlock();
+		ModBlocks.register();
+		ModBlockEntities.register();
+
+
+		PayloadTypeRegistry.serverboundPlay().register(PerimeterSizePayload.TYPE, PerimeterSizePayload.CODEC);
+
+		ServerPlayNetworking.registerGlobalReceiver(PerimeterSizePayload.TYPE, (payload, context) -> {
+			context.server().execute(() -> {
+				BlockEntity be = context.player().level().getBlockEntity(payload.pos());
+				if (be instanceof PerimeterBlockEntity perimeterBE) {
+					perimeterBE.setSize(payload.size());
+					perimeterBE.startMining();
+				}
+			});
+		});
 	}
 
 	public static Identifier id(String path) {

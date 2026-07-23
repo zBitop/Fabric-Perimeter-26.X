@@ -18,6 +18,9 @@
 		"main": [
 			"zbitop.perimeter.Perimeter"
 		],
+		"client": [
+			"zbitop.perimeter.PerimeterClient"
+		],
 		"fabric-datagen": [
 			"zbitop.perimeter.PerimeterDataGenerator"
 		]
