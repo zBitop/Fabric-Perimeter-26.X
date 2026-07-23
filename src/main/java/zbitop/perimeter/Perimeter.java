@@ -15,6 +15,7 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import zbitop.perimeter.block.entity.PerimeterBlockEntity;
 import zbitop.perimeter.network.PerimeterSizePayload;
+import zbitop.perimeter.network.PerimeterWithdrawPayload;
 
 
 public class Perimeter implements ModInitializer {
@@ -30,6 +31,7 @@ public class Perimeter implements ModInitializer {
 
 
 		PayloadTypeRegistry.serverboundPlay().register(PerimeterSizePayload.TYPE, PerimeterSizePayload.CODEC);
+		PayloadTypeRegistry.serverboundPlay().register(PerimeterWithdrawPayload.TYPE, PerimeterWithdrawPayload.CODEC);
 
 		ServerPlayNetworking.registerGlobalReceiver(PerimeterSizePayload.TYPE, (payload, context) -> {
 			context.server().execute(() -> {
@@ -37,6 +39,15 @@ public class Perimeter implements ModInitializer {
 				if (be instanceof PerimeterBlockEntity perimeterBE) {
 					perimeterBE.setSize(payload.size());
 					perimeterBE.startMining();
+				}
+			});
+		});
+
+		ServerPlayNetworking.registerGlobalReceiver(PerimeterWithdrawPayload.TYPE, (payload, context) -> {
+			context.server().execute(() -> {
+				BlockEntity be = context.player().level().getBlockEntity(payload.pos());
+				if (be instanceof PerimeterBlockEntity perimeterBE) {
+					perimeterBE.withdrawAllTo(context.player());
 				}
 			});
 		});

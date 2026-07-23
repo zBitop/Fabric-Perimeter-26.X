@@ -4,6 +4,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.DataSlot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import zbitop.perimeter.block.entity.PerimeterBlockEntity;
@@ -11,6 +12,10 @@ import zbitop.perimeter.block.entity.PerimeterBlockEntity;
 public class PerimeterMenu extends AbstractContainerMenu {
 
     private final PerimeterBlockEntity blockEntity;
+
+    // Espejo del progreso sincronizado por el DataSlot. En el servidor no se usa
+    // (ahí se lee directo de blockEntity), en el cliente es lo único confiable.
+    private int syncedProgressPercent = 0;
 
     // Constructor del lado del CLIENTE: se llama cuando llega el paquete de "abrir menú" con el BlockPos
     public PerimeterMenu(int syncId, Inventory playerInventory, BlockPos pos) {
@@ -21,6 +26,21 @@ public class PerimeterMenu extends AbstractContainerMenu {
     public PerimeterMenu(int syncId, Inventory playerInventory, PerimeterBlockEntity blockEntity) {
         super(ModMenuTypes.PERIMETER_MENU, syncId);
         this.blockEntity = blockEntity;
+
+        // Sincroniza el % de progreso al cliente automáticamente mientras el menú esté abierto.
+        this.addDataSlot(new DataSlot() {
+            @Override
+            public int get() {
+                // Solo se llama en el servidor (es donde vive el progreso real).
+                return blockEntity.getProgressPercent();
+            }
+
+            @Override
+            public void set(int value) {
+                // Se llama en el cliente cuando llega el paquete de sincronización.
+                syncedProgressPercent = value;
+            }
+        });
     }
 
     private static PerimeterBlockEntity getBlockEntity(Inventory playerInventory, BlockPos pos) {
@@ -33,6 +53,10 @@ public class PerimeterMenu extends AbstractContainerMenu {
 
     public PerimeterBlockEntity getBlockEntityRef() {
         return blockEntity;
+    }
+
+    public int getProgressPercent() {
+        return syncedProgressPercent;
     }
 
     @Override

@@ -1,12 +1,18 @@
 package zbitop.perimeter.block.entity;
 
-import net.fabricmc.fabric.api.menu.v1.FabricMenuProvider;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.Holder;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.storage.ValueInput;
@@ -15,11 +21,20 @@ import net.minecraft.world.level.storage.ValueOutput;
 import net.fabricmc.fabric.api.menu.v1.ExtendedMenuProvider;
 import net.minecraft.network.chat.Component;
 import org.jspecify.annotations.Nullable;
+import zbitop.perimeter.block.ValuableBlocks;
+import zbitop.perimeter.screen.PerimeterMenu;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Optional;
 
 
 public class PerimeterBlockEntity extends BlockEntity implements ExtendedMenuProvider<BlockPos>  {
     private int size = 5;
 
+    // Almacenamiento "infinito": no son ItemStacks reales, solo un contador por tipo de ítem.
+    // Así no hay riesgo de desbordar ni de perder ítems por cofres llenos durante un AFK largo.
+    private final Map<Item, Long> storage = new LinkedHashMap<>();
 
     public PerimeterBlockEntity(BlockPos pos, BlockState state) {
         super(ModBlockEntities.PERIMETER_BE, pos, state);
@@ -34,12 +49,23 @@ public class PerimeterBlockEntity extends BlockEntity implements ExtendedMenuPro
         setChanged();
     }
 
+    public Map<Item, Long> getStorageView() {
+        return storage;
+    }
+
+    private void collect(Item item, long amount) {
+        if (amount <= 0) return;
+        storage.merge(item, amount, Long::sum);
+        setChanged();
+    }
+
     @Override
     protected void saveAdditional(ValueOutput output) {
         super.saveAdditional(output);
         output.putInt("Size", size);
         output.putBoolean("Mining", mining);
         output.putLong("Progress", progress);
+        output.putString("Storage", serializeStorage());
     }
 
     @Override
@@ -48,6 +74,71 @@ public class PerimeterBlockEntity extends BlockEntity implements ExtendedMenuPro
         this.size = input.getIntOr("Size", 5);
         this.mining = input.getBooleanOr("Mining", false);
         this.progress = input.getLongOr("Progress", 0L);
+        deserializeStorage(input.getStringOr("Storage", ""));
+    }
+
+    // Formato simple: "modid:item=cantidad;modid:item=cantidad;..."
+    private String serializeStorage() {
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<Item, Long> entry : storage.entrySet()) {
+            Identifier id = BuiltInRegistries.ITEM.getKey(entry.getKey());
+            if (sb.length() > 0) sb.append(';');
+            sb.append(id).append('=').append(entry.getValue());
+        }
+        return sb.toString();
+    }
+
+    private void deserializeStorage(String raw) {
+        storage.clear();
+        if (raw == null || raw.isEmpty()) return;
+        for (String part : raw.split(";")) {
+            int eq = part.indexOf('=');
+            if (eq <= 0) continue;
+            try {
+                Identifier id = Identifier.parse(part.substring(0, eq));
+                long amount = Long.parseLong(part.substring(eq + 1));
+                Optional<Holder.Reference<Item>> holder = BuiltInRegistries.ITEM.get(id);
+                if (holder.isPresent() && amount > 0) {
+                    storage.put(holder.get().value(), amount);
+                }
+            } catch (Exception ignored) {
+                // línea corrupta, la saltamos en vez de romper la carga del bloque
+            }
+        }
+    }
+
+    /**
+     * Le entrega todo lo almacenado al jugador (inventario, y lo que no entre cae al piso
+     * en la posición del bloque). Vacía el almacenamiento al terminar.
+     */
+    public void withdrawAllTo(Player player) {
+        for (Map.Entry<Item, Long> entry : storage.entrySet()) {
+            Item item = entry.getKey();
+            long remaining = entry.getValue();
+            int maxStack = new ItemStack(item).getMaxStackSize();
+
+            while (remaining > 0) {
+                int stackSize = (int) Math.min(remaining, maxStack);
+                ItemStack stack = new ItemStack(item, stackSize);
+
+                if (!player.getInventory().add(stack)) {
+                    // no entró (o entró parcial): lo que sobre se tira en el piso del bloque
+                    if (!stack.isEmpty() && this.level != null) {
+                        net.minecraft.world.Containers.dropItemStack(
+                                this.level,
+                                this.worldPosition.getX() + 0.5,
+                                this.worldPosition.getY() + 0.5,
+                                this.worldPosition.getZ() + 0.5,
+                                stack
+                        );
+                    }
+                }
+
+                remaining -= stackSize;
+            }
+        }
+        storage.clear();
+        setChanged();
     }
 
     @Override
@@ -63,6 +154,25 @@ public class PerimeterBlockEntity extends BlockEntity implements ExtendedMenuPro
         this.mining = true;
         this.progress = 0;
         setChanged();
+    }
+
+    public boolean isMining() {
+        return mining;
+    }
+
+    /**
+     * Progreso del minado actual, de 0 a 100. Se usa para sincronizar la barra
+     * de progreso al cliente a través de un DataSlot en PerimeterMenu.
+     */
+    public int getProgressPercent() {
+        if (level == null || size <= 0) return 0;
+
+        int height = worldPosition.getY() - level.getMinY();
+        long totalBlocks = (long) size * size * height;
+        if (totalBlocks <= 0) return mining ? 0 : 100;
+
+        long pct = (progress * 100) / totalBlocks;
+        return (int) Math.min(100, Math.max(0, pct));
     }
 
     public void tick(Level level, BlockPos originPos) {
@@ -85,9 +195,21 @@ public class PerimeterBlockEntity extends BlockEntity implements ExtendedMenuPro
             BlockPos target = originPos.offset(x, -(y + 1), z);
             BlockState targetState = level.getBlockState(target);
 
-            if (!targetState.isAir() && targetState.getDestroySpeed(level, target) >= 0) {
-                level.destroyBlock(target, true); // true = suelta los ítems al piso (por ahora)
+            if (!targetState.isAir()) {
+                if (!targetState.getFluidState().isEmpty()) {
+                    // Agua o lava justo en la zona de minado: la vaciamos directo, sin generar drop.
+                    level.setBlockAndUpdate(target, Blocks.AIR.defaultBlockState());
+                } else if (targetState.getDestroySpeed(level, target) >= 0) {
+                    if (ValuableBlocks.isValuable(targetState.getBlock())) {
+                        // "silk touch" simulado: guardamos el ítem del bloque tal cual, no su loot table
+                        collect(targetState.getBlock().asItem(), 1);
+                    }
+                    level.destroyBlock(target, false); // false = con partículas/sonido pero SIN soltar ítems al piso
+                }
+                // si no es líquido y destroySpeed < 0 (ej: bedrock), lo dejamos intacto
             }
+
+            sealAdjacentLiquids(level, target);
 
             progress++;
         }
@@ -95,13 +217,31 @@ public class PerimeterBlockEntity extends BlockEntity implements ExtendedMenuPro
         setChanged();
     }
 
+    private static final Direction[] SEAL_DIRECTIONS = {
+            Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST
+    };
+
+    /**
+     * Tapa con cobblestone cualquier líquido pegado a los costados del bloque recién minado,
+     * para que bolsas de agua/lava en las paredes no se filtren hacia el pozo ya excavado.
+     */
+    private void sealAdjacentLiquids(Level level, BlockPos minedPos) {
+        for (Direction dir : SEAL_DIRECTIONS) {
+            BlockPos neighbor = minedPos.relative(dir);
+            BlockState neighborState = level.getBlockState(neighbor);
+            if (!neighborState.getFluidState().isEmpty() && neighborState.getBlock() != Blocks.COBBLESTONE) {
+                level.setBlockAndUpdate(neighbor, Blocks.COBBLESTONE.defaultBlockState());
+            }
+        }
+    }
+
     @Override
     public BlockPos getScreenOpeningData(ServerPlayer player) {
-        return null;
+        return this.getBlockPos();
     }
 
     @Override
     public @Nullable AbstractContainerMenu createMenu(int containerId, Inventory inventory, Player player) {
-        return null;
+        return new PerimeterMenu(containerId, inventory, this);
     }
 }
