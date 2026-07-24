@@ -150,7 +150,6 @@ public class PerimeterBlockEntity extends BlockEntity implements ExtendedMenuPro
 
     private boolean mining = false;
     private long progress = 0;
-    private static final int BLOCKS_PER_TICK = 8;
 
     public void startMining() {
         this.mining = true;
@@ -213,11 +212,13 @@ public class PerimeterBlockEntity extends BlockEntity implements ExtendedMenuPro
         int height = originPos.getY() - level.getMinY();
         long totalBlocks = (long) size * size * height;
 
-        for (int i = 0; i < BLOCKS_PER_TICK; i++) {
+        long tickStart = System.nanoTime();
+        int sinceTimeCheck = 0;
+
+        while (true) {
             if (progress >= totalBlocks) {
                 mining = false;
-                setChanged();
-                return;
+                break;
             }
 
             int x = (int) (progress % size);
@@ -230,20 +231,37 @@ public class PerimeterBlockEntity extends BlockEntity implements ExtendedMenuPro
             if (!targetState.isAir()) {
                 if (!targetState.getFluidState().isEmpty()) {
                     // Agua o lava justo en la zona de minado: la vaciamos directo, sin generar drop.
-                    level.setBlockAndUpdate(target, Blocks.AIR.defaultBlockState());
+                    level.setBlock(target, AIR_STATE, RAW_SET_FLAGS);
                 } else if (targetState.getDestroySpeed(level, target) >= 0) {
                     if (ValuableBlocks.isValuable(targetState.getBlock())) {
                         // "silk touch" simulado: guardamos el ítem del bloque tal cual, no su loot table
                         collect(targetState.getBlock().asItem(), 1);
                     }
-                    level.destroyBlock(target, false); // false = con partículas/sonido pero SIN soltar ítems al piso
+                    // setBlock "crudo": sin sonido, sin partículas de rotura, sin update de vecinos.
+                    // Mucho más barato que destroyBlock() a este volumen de bloques.
+                    level.setBlock(target, AIR_STATE, RAW_SET_FLAGS);
                 }
                 // si no es líquido y destroySpeed < 0 (ej: bedrock), lo dejamos intacto
             }
 
-            sealAdjacentLiquids(level, target);
+            // Sellar líquidos solo tiene sentido en el borde del área: en el interior,
+            // el "vecino con líquido" es una celda que vamos a minar nosotros mismos
+            // un instante después, así que revisarla ahí es trabajo tirado a la basura.
+            boolean isEdge = (x == 0 || x == size - 1 || z == 0 || z == size - 1);
+            if (isEdge) {
+                sealAdjacentLiquids(level, target);
+            }
 
             progress++;
+
+            // Revisamos el reloj cada 256 bloques en vez de en cada uno: System.nanoTime()
+            // también tiene un costo, y llamarlo por bloque sería desperdiciar presupuesto.
+            if (++sinceTimeCheck >= 256) {
+                sinceTimeCheck = 0;
+                if (System.nanoTime() - tickStart >= TICK_TIME_BUDGET_NS) {
+                    break;
+                }
+            }
         }
 
         setChanged();
@@ -253,19 +271,33 @@ public class PerimeterBlockEntity extends BlockEntity implements ExtendedMenuPro
             Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST
     };
 
+    private static final BlockState AIR_STATE = Blocks.AIR.defaultBlockState();
+
+    // flag 2 = UPDATE_CLIENTS (avisa a los jugadores para que se vea el cambio)
+    // Sin flag 1 (UPDATE_NEIGHBORS): no dispara updates de física/redstone/forma en cada bloque vecino.
+    // Es justamente ese trabajo en cascada el que hacía lento esto a escala de miles de bloques.
+    private static final int RAW_SET_FLAGS = 2;
+
+    // Presupuesto de tiempo de CPU por tick dedicado a minar. Subilo si tu servidor aguanta
+    // más (ej. 6_000_000 = 6ms) o bajalo si notás lag en otras cosas mientras mina.
+    private static final long TICK_TIME_BUDGET_NS = 4_000_000; // 4ms de 50ms disponibles por tick
+
     /**
      * Tapa con cobblestone cualquier líquido pegado a los costados del bloque recién minado,
      * para que bolsas de agua/lava en las paredes no se filtren hacia el pozo ya excavado.
+     * Solo se llama para bloques del borde del área (ver tick()).
      */
     private void sealAdjacentLiquids(Level level, BlockPos minedPos) {
         for (Direction dir : SEAL_DIRECTIONS) {
             BlockPos neighbor = minedPos.relative(dir);
             BlockState neighborState = level.getBlockState(neighbor);
             if (!neighborState.getFluidState().isEmpty() && neighborState.getBlock() != Blocks.COBBLESTONE) {
-                level.setBlockAndUpdate(neighbor, Blocks.COBBLESTONE.defaultBlockState());
+                level.setBlock(neighbor, COBBLESTONE_STATE, RAW_SET_FLAGS);
             }
         }
     }
+
+    private static final BlockState COBBLESTONE_STATE = Blocks.COBBLESTONE.defaultBlockState();
 
     @Override
     public BlockPos getScreenOpeningData(ServerPlayer player) {

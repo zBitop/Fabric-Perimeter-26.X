@@ -14,7 +14,7 @@ import zbitop.perimeter.Perimeter;
 public class ModBlocks {
 
     public static final Block PERIMETER = registerBlockWithItem("perimeter",
-            settings -> new PerimeterBlock(settings.strength(3.5f)));
+            settings -> new PerimeterBlock(settings.strength(2f)));
 
     private static Block registerBlockWithItem(String name,
                                                java.util.function.Function<BlockBehaviour.Properties, Block> factory) {
